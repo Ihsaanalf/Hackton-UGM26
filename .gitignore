@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.venv_new/
+venv_new/
+
+# Node.js
+node_modules/
+dist/
+
+# Environment dan rahasia
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Database aktif
+revalue.db
+*.sqlite
+*.sqlite3
+
+# Cache dan file model besar
+.pytest_cache/
+.mypy_cache/
+*.pt
+*.pth
+*.onnx
+
+# Editor dan sistem
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Dataset AI — tetap tersimpan lokal
+revalue/ai/dataset/
+revalue-ui-prototype/node

@@ -1,0 +1,35 @@
+1. AI nya
+
+D:\hackathon>cd D:\hackathon\revalue
+
+D:\hackathon\revalue>cd ai
+
+D:\hackathon\revalue\ai>.\.venv_new\Scripts\activate
+
+(.venv_new) D:\hackathon\revalue\ai>python -m uvicorn api:app --reload
+
+2. UI nya
+
+D:\hackathon>cd D:\hackathon\revalue-ui-prototype
+
+D:\hackathon\revalue-ui-prototype>npm run dev
+
+3. backend
+
+D:\hackathon>cd D:\hackathon\revalue\backend
+
+D:\hackathon\revalue\backend>.\.venv\Scripts\activate
+
+(.venv) D:\hackathon\revalue\backend>python -m uvicorn main:app --reload --port 8001
+
+4. cek wallet
+D:\hackathon>cd D:\hackathon\revalue\backend
+
+D:\hackathon\revalue\backend>.venv\Scripts\activate
+
+(.venv) D:\hackathon\revalue\backend>python -c "from database import engine; print(engine.dialect.get_table_names(engine.connect()))"
+
+
+UI: http://localhost:5173/
+AI: http://127.0.0.1:8000/docs ATAU http://127.0.0.1:8000/
+OUTPUT WALLET : ['materials', 'pickup_requests', 'transactions', 'wallet_transactions', 'wallets']
