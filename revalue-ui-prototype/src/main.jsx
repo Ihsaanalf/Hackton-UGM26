@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   ArrowLeft, ArrowRight, Camera, CheckCircle2, CircleDollarSign,
   Image as ImageIcon, Leaf, Recycle, Sparkles, Users, Wallet, Home,
-  Package, UserRound, Bell, Lightbulb
+  Package, UserRound, Bell, Lightbulb, Target, Factory, RefreshCw, Coins
 } from "lucide-react";
 import "./styles.css";
 
@@ -36,6 +36,14 @@ const materialEmoji = {
   Plastic: "🧴"
 };
 
+const materialTips = {
+  Plastic: "Kosongkan, bilas, dan lepas tutup atau labelnya sebelum dijual.",
+  Paper_Cardboard: "Jaga tetap kering dan lipat kardus agar hemat tempat.",
+  Glass: "Pisahkan berdasarkan warna dan hati-hati dengan pecahan.",
+  Metal: "Remukkan kaleng dan bilas sisa isinya.",
+  Organic: "Bisa dijadikan kompos, belum bisa ditukar menjadi uang.",
+  Other: "Belum dapat ditukar menjadi uang.",
+};
 
 function App() {
   const [screen, setScreen] = useState("login");
@@ -46,6 +54,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [sellWeight, setSellWeight] = useState("1");
   const [sellCalculation, setSellCalculation] = useState(null);
+  const [focusMaterial, setFocusMaterial] = useState("");
 
   // Data hasil AI
   const [aiResult, setAiResult] = useState(null);
@@ -55,95 +64,92 @@ function App() {
 
   const go = (next) => setScreen(next);
 
-  
-const handleLogin = async (email, password) => {
-  try {
-    setLoading(true);
-    setError("");
 
-    const response = await fetch(`${BACKEND_URL}/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({ 
-        sername: email, 
-        password: password, 
-      }),
-    });
+  const handleLogin = async (email, password) => {
+    try {
+      setLoading(true);
+      setError("");
 
-    const data = await response.json();
+      const response = await fetch(`${BACKEND_URL}/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
 
-    if (!response.ok) {
-      throw new Error(data.detail || "Login gagal.");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Login gagal.");
+      }
+
+      const token = data.access_token;
+
+      if (!token) {
+        throw new Error("Token login tidak ditemukan.");
+      }
+
+      localStorage.setItem("revalue_token", token);
+      setAuthToken(token);
+
+      const userResponse = await fetch(`${BACKEND_URL}/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const userData = await userResponse.json();
+
+      if (!userResponse.ok) {
+        throw new Error(userData.detail || "Gagal mengambil profil.");
+      }
+
+      setCurrentUser(userData.user);
+      setScreen("home");
+    } catch (err) {
+      setError(err.message || "Tidak dapat terhubung ke backend.");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const token = data.access_token;
 
-    if (!token) {
-      throw new Error("Token login tidak ditemukan.");
+  const handleRegister = async (name, email, password) => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch(`${BACKEND_URL}/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : "Pendaftaran gagal. Periksa data akunmu."
+        );
+      }
+
+      setScreen("login");
+      setError("Akun berhasil dibuat! Silakan login.");
+    } catch (err) {
+      setError(err.message || "Tidak dapat terhubung ke backend.");
+    } finally {
+      setLoading(false);
     }
-
-    localStorage.setItem("revalue_token", token);
-    setAuthToken(token);
-
-    const userResponse = await fetch(`${BACKEND_URL}/me`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    const userData = await userResponse.json();
-
-    if (!userResponse.ok) {
-      throw new Error(userData.detail || "Gagal mengambil profil.");
-    }
-
-    setCurrentUser(userData);
-    setScreen("home");
-  } catch (err) {
-    setError(err.message || "Tidak dapat terhubung ke backend.");
-  } finally {
-    setLoading(false);
-  }
-};
-
-
-const handleRegister = async (name, email, password) => {
-  try {
-    setLoading(true);
-    setError("");
-
-    const response = await fetch(`${BACKEND_URL}/register`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name,
-        email,
-        password,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        typeof data.detail === "string"
-          ? data.detail
-          : "Pendaftaran gagal. Periksa data akunmu."
-      );
-    }
-
-    setScreen("login");
-    setError("Akun berhasil dibuat! Silakan login.");
-  } catch (err) {
-    setError(err.message || "Tidak dapat terhubung ke backend.");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
 
   const handleImage = async (file) => {
@@ -216,7 +222,8 @@ const handleRegister = async (name, email, password) => {
           />
         )}
 
-        {screen === "home" && <HomeScreen go={go} />}
+      {screen === "home" && ( <HomeScreen go={go} user={currentUser} token={authToken} onPickMaterial={setFocusMaterial} />
+        )}
 
         {screen === "scan" && (
           <ScanScreen
@@ -228,23 +235,22 @@ const handleRegister = async (name, email, password) => {
         )}
 
         {screen === "result" && (
-          <ResultScreen
-            go={go}
-            aiResult={aiResult}
-            selectedImage={selectedImage}
-          />
+          <ResultScreen go={go} aiResult={aiResult} selectedImage={selectedImage} weight={sellWeight} setWeight={setSellWeight} />
         )}
 
         {screen === "sell" && (
-          <SellScreen
-            go={go}
-            aiResult={aiResult}
-          />
+          <SellScreen go={go} aiResult={aiResult} token={authToken} initialWeight={sellWeight} />
         )}
 
         {screen === "collective" && <CollectiveScreen go={go} />}
 
-        {screen === "wallet" && <WalletScreen go={go} />}
+        {screen === "wallet" && <WalletScreen go={go} token={authToken} />}
+
+        {screen === "materials" && <MaterialsScreen go={go} focus={focusMaterial} />}
+
+        {screen === "recycle" && <RecycleScreen go={go} aiResult={aiResult} />}
+
+        {screen === "impact" && <ImpactScreen go={go} token={authToken} />}
 
         {screen === "activity" && <ActivityScreen go={go} />}
 
@@ -252,49 +258,49 @@ const handleRegister = async (name, email, password) => {
 
         {screen !== "login" && screen !== "register" && (
           <nav className="bottom-nav">
-          <NavItem
-            icon={<Home size={20}/>}
-            label="Home"
-            active={screen === "home"}
-            onClick={() => go("home")}
-          />
+            <NavItem
+              icon={<Home size={20} />}
+              label="Home"
+              active={screen === "home"}
+              onClick={() => go("home")}
+            />
 
-          <NavItem
-            icon={<Camera size={20}/>}
-            label="Scan"
-            active={["scan","result"].includes(screen)}
-            onClick={() => go("scan")}
-          />
+            <NavItem
+              icon={<Camera size={20} />}
+              label="Scan"
+              active={["scan", "result"].includes(screen)}
+              onClick={() => go("scan")}
+            />
 
-          <NavItem
-            icon={<Package size={20} />}
-            label="Aktivitas"
-            active={screen === "activity"}
-            onClick={() => go("activity")}
-          />
+            <NavItem
+              icon={<Package size={20} />}
+              label="Aktivitas"
+              active={screen === "activity"}
+              onClick={() => go("activity")}
+            />
 
-          <NavItem
-            icon={<Wallet size={20}/>}
-            label="Wallet"
-            active={screen === "wallet"}
-            onClick={() => go("wallet")}
+            <NavItem
+              icon={<Wallet size={20} />}
+              label="Wallet"
+              active={screen === "wallet"}
+              onClick={() => go("wallet")}
 
-          />
+            />
 
-          <NavItem
-            icon={<UserRound size={20}/>}
-            label="Profile"
-            active={screen === "profile"}
-            onClick={() => go("profile")}
-          />
-        </nav>
+            <NavItem
+              icon={<UserRound size={20} />}
+              label="Profile"
+              active={screen === "profile"}
+              onClick={() => go("profile")}
+            />
+          </nav>
         )}
       </div>
     </div>
   );
 }
 
-function NavItem({icon, label, active, onClick}) {
+function NavItem({ icon, label, active, onClick }) {
   return (
     <button
       className={`nav-item ${active ? "active" : ""}`}
@@ -306,7 +312,7 @@ function NavItem({icon, label, active, onClick}) {
   );
 }
 
-function Header({title, back, go}) {
+function Header({ title, back, go }) {
   return (
     <header className="header">
       {back ? (
@@ -314,11 +320,11 @@ function Header({title, back, go}) {
           className="icon-btn"
           onClick={() => go(back)}
         >
-          <ArrowLeft size={21}/>
+          <ArrowLeft size={21} />
         </button>
       ) : (
         <div className="brand-mark">
-          <Leaf size={17}/>
+          <Leaf size={17} />
         </div>
       )}
 
@@ -326,23 +332,48 @@ function Header({title, back, go}) {
 
       {!back && (
         <button className="icon-btn ghost">
-          <Bell size={19}/>
+          <Bell size={19} />
         </button>
       )}
 
-      {back && <div style={{width: 40}} />}
+      {back && <div style={{ width: 40 }} />}
     </header>
   );
 }
 
-function HomeScreen({go}) {
+function HomeScreen({go, user, token, onPickMaterial}) {
+  const [impact, setImpact] = useState(null);
+
+  React.useEffect(() => {
+    if (!token) return;
+    fetch(`${BACKEND_URL}/impact?period=today`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => setImpact(data))
+      .catch(() => setImpact(null));
+  }, [token]);
+
+const [materials, setMaterials] = useState([]);
+
+React.useEffect(() => {
+  fetch(`${BACKEND_URL}/materials`)
+    .then((res) => res.json())
+    .then((data) => setMaterials(data.materials || []))
+    .catch(() => setMaterials([]));
+}, []);
+
+const homeMaterials = materials.filter((m) =>
+  ["Plastic", "Paper_Cardboard", "Metal"].includes(m.name)
+);
+
   return (
     <main>
       <Header title="ReValue" go={go} />
 
       <section className="hero">
         <div>
-          <h1>Halo, Azfa 👋</h1>
+          <h1>Halo, {user?.name?.split(" ")[0] || "Teman"} 👋</h1>
           <p>
             Sampah punya nilai,<br/>
             jangan buang sebelum tahu nilainya!
@@ -366,25 +397,27 @@ function HomeScreen({go}) {
       <section className="card impact-card">
         <div className="section-title">
           <span>Dampakmu Hari Ini</span>
-          <small>Lihat detail ›</small>
+          <small style={{ cursor: "pointer" }} onClick={() => go("impact")}>
+            Lihat detail ›
+          </small>
         </div>
 
         <div className="stats">
           <Stat
             icon={<CircleDollarSign/>}
-            value="Rp127.500"
+            value={`Rp${Number(impact?.total_income || 0).toLocaleString("id-ID")}`}
             label="Total Pendapatan"
           />
 
           <Stat
             icon={<Recycle/>}
-            value="18,4 kg"
+            value={`${Number(impact?.total_kg || 0).toLocaleString("id-ID")} kg`}
             label="Material Tersalurkan"
           />
 
           <Stat
             icon={<Package/>}
-            value="12"
+            value={String(impact?.count || 0)}
             label="Transaksi"
           />
         </div>
@@ -393,27 +426,30 @@ function HomeScreen({go}) {
       <section>
         <div className="section-title">
           <span>Sampah yang Bisa Kamu Ubah</span>
-          <small>Lihat semua ›</small>
+          <small
+            style={{ cursor: "pointer" }}
+            onClick={() => {
+              onPickMaterial("");
+              go("materials");
+            }}
+          >
+            Lihat semua ›
+          </small>
         </div>
 
         <div className="material-row">
-          <Material
-            emoji="🧴"
-            name="Botol PET"
-            price="Rp4.000/kg"
-          />
-
-          <Material
-            emoji="📦"
-            name="Kardus"
-            price="Rp2.500/kg"
-          />
-
-          <Material
-            emoji="🥫"
-            name="Kaleng"
-            price="Rp8.000/kg"
-          />
+          {homeMaterials.map((m) => (
+            <Material
+              key={m.id}
+              emoji={materialEmoji[m.name]}
+              name={materialNames[m.name] || m.name}
+              price={`Rp${Number(m.price_per_kg).toLocaleString("id-ID")}/kg`}
+              onClick={() => {
+                onPickMaterial(m.name);
+                go("materials");
+              }}
+            />
+          ))}
         </div>
       </section>
 
@@ -436,7 +472,7 @@ function HomeScreen({go}) {
   );
 }
 
-function Stat({icon,value,label}) {
+function Stat({ icon, value, label }) {
   return (
     <div className="stat">
       <div className="stat-icon">{icon}</div>
@@ -446,9 +482,13 @@ function Stat({icon,value,label}) {
   );
 }
 
-function Material({emoji,name,price}) {
+function Material ({emoji, name, price, onClick}) {
   return (
-    <div className="material-card">
+    <div
+      className="material-card"
+      onClick={onClick}
+      style={{ cursor: onClick ? "pointer" : "default" }}
+    >
       <div className="emoji">{emoji}</div>
       <strong>{name}</strong>
       <span>{price}</span>
@@ -590,10 +630,10 @@ function ScanScreen({
 
             <div className="bottle">🧴</div>
 
-            <span className="corner tl"/>
-            <span className="corner tr"/>
-            <span className="corner bl"/>
-            <span className="corner br"/>
+            <span className="corner tl" />
+            <span className="corner tr" />
+            <span className="corner bl" />
+            <span className="corner br" />
 
             <div className="camera-tip">
               ⚡ Arahkan kamera ke sampah dengan jelas
@@ -613,10 +653,10 @@ function ScanScreen({
               className="camera-video"
             />
 
-            <span className="corner tl"/>
-            <span className="corner tr"/>
-            <span className="corner bl"/>
-            <span className="corner br"/>
+            <span className="corner tl" />
+            <span className="corner tr" />
+            <span className="corner bl" />
+            <span className="corner br" />
 
             <div className="camera-live-tip">
               Arahkan kamera ke sampah
@@ -646,7 +686,7 @@ function ScanScreen({
 
       {loading && (
         <div className="info-box">
-          <Sparkles size={20}/>
+          <Sparkles size={20} />
           AI sedang menganalisis gambar...
         </div>
       )}
@@ -675,7 +715,7 @@ function ScanScreen({
             className="primary-btn"
             onClick={openCamera}
           >
-            <Camera size={20}/>
+            <Camera size={20} />
             Ambil Foto
           </button>
 
@@ -686,7 +726,7 @@ function ScanScreen({
 
           <label className="secondary-btn">
 
-            <ImageIcon size={20}/>
+            <ImageIcon size={20} />
             Upload dari Galeri
 
             <input
@@ -708,7 +748,7 @@ function ScanScreen({
             className="primary-btn"
             onClick={capturePhoto}
           >
-            <Camera size={20}/>
+            <Camera size={20} />
             Ambil Foto
           </button>
 
@@ -730,7 +770,7 @@ function ScanScreen({
 
       <div className="tip-card">
 
-        <Lightbulb size={19}/>
+        <Lightbulb size={19} />
 
         <div>
 
@@ -748,13 +788,10 @@ function ScanScreen({
   );
 }
 
-function ResultScreen({
-  go,
-  aiResult,
-  selectedImage
-}) {
+function ResultScreen({ go, aiResult, selectedImage, weight, setWeight }) {
 
-  // Kalau belum ada hasil AI, gunakan dummy lama
+  // Nama material dan confidence berasal dari model AI.
+  // Nilai "Plastic" hanya cadangan kalau aiResult kosong.
   const prediction =
     aiResult?.prediction || "Plastic";
 
@@ -771,6 +808,36 @@ function ResultScreen({
 
   const emoji =
     materialEmoji[prediction] || "♻️";
+
+  const [estimate, setEstimate] = useState(null);
+
+  React.useEffect(() => {
+    const kg = Number(weight);
+    if (!aiResult || !Number.isFinite(kg) || kg <= 0) {
+      setEstimate(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({
+        material_name: prediction,
+        weight_kg: String(kg),
+      });
+      fetch(`${BACKEND_URL}/calculate?${params}`)
+        .then((res) => res.json())
+        .then((data) => setEstimate(data))
+        .catch(() => setEstimate(null));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [weight, prediction, aiResult]);
+
+  const potentialValue = () => {
+    if (!aiResult) return material.value;
+    if (estimate?.exchangeable === false) return "Belum bisa ditukar";
+    if (estimate?.net_value != null) {
+      return `Rp${Number(estimate.net_value).toLocaleString("id-ID")}`;
+    }
+    return "Isi berat dulu";
+  };
 
   return (
     <main>
@@ -803,14 +870,14 @@ function ResultScreen({
         <div className="result-info">
 
           <span className="ai-badge">
-            <Sparkles size={14}/>
+            <Sparkles size={14} />
             AI Recognition
           </span>
 
           <h2>{displayName}</h2>
 
           <span className="confidence">
-            <CheckCircle2 size={15}/>
+            <CheckCircle2 size={15} />
             {confidence.toFixed(1)}% confidence
           </span>
 
@@ -819,18 +886,30 @@ function ResultScreen({
         <div className="result-metrics">
 
           <Metric
-            icon={<Recycle/>}
-            label="Estimasi Berat"
-            value={aiResult ? "Belum ditimbang" : material.weight}
-          />
+              icon={<Recycle/>}
+              label="Estimasi Berat"
+              value={aiResult ? `${weight || 0} kg` : material.weight} />
 
-          <Metric
-            icon={<CircleDollarSign/>}
-            label="Potensi Nilai"
-            value={aiResult ? "Akan dihitung" : material.value}
-            sub={aiResult ? "Berdasarkan material & berat" : material.range}
-          />
+            <Metric
+              icon={<CircleDollarSign/>}
+              label="Potensi Nilai"
+              value={potentialValue()}
+              sub={aiResult ? "Setelah biaya pickup" : material.range}/>
 
+        </div>
+
+        <div className="weight-field">
+          <label>
+            Perkiraan berat (kg)
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            className="field-input"
+          />
         </div>
 
       </section>
@@ -850,14 +929,14 @@ function ResultScreen({
           <Action
             title="Jual"
             text="Dapatkan nilai ekonomis dari sampahmu."
-            icon="♻️"
+            icon={<Coins size={21} />}
             onClick={() => go("sell")}
           />
 
           <Action
             title="Gabungkan"
             text="Kumpulkan bersama pengguna lain."
-            icon="👥"
+            icon={<Users size={21} />}
             onClick={() => go("collective")}
             featured
           />
@@ -865,22 +944,17 @@ function ResultScreen({
           <Action
             title="Daur Ulang"
             text="Langsung ke mitra recycler kami."
-            icon="🍃"
+            icon={<Recycle size={21} />}
+            onClick={() => go("recycle")}
+            style={{ gridColumn: "1 / -1", minHeight: 90 }}
           />
-
-          <Action
-            title="Donasikan"
-            text="Untuk program sosial yang membutuhkan."
-            icon="🎁"
-          />
-
         </div>
 
       </section>
 
       <div className="info-box">
 
-        <Lightbulb size={20}/>
+        <Lightbulb size={20} />
 
         Menggabungkan material dengan pengguna lain bisa meningkatkan volume sehingga lebih menarik bagi pembeli/recycler.
 
@@ -891,14 +965,14 @@ function ResultScreen({
         onClick={() => go("collective")}
       >
         Lanjutkan
-        <ArrowRight size={19}/>
+        <ArrowRight size={19} />
       </button>
 
     </main>
   );
 }
 
-function Metric({icon,label,value,sub}) {
+function Metric({ icon, label, value, sub }) {
   return (
     <div className="metric">
       <div className="metric-icon">
@@ -914,17 +988,12 @@ function Metric({icon,label,value,sub}) {
   );
 }
 
-function Action({
-  title,
-  text,
-  icon,
-  onClick,
-  featured
-}) {
+function Action({ title, text, icon, onClick, featured, style }) {
   return (
     <button
       className={`action-card ${featured ? "featured" : ""}`}
       onClick={onClick}
+      style={style}
     >
       <span className="action-icon">{icon}</span>
       <strong>{title}</strong>
@@ -934,6 +1003,14 @@ function Action({
 }
 
 function CollectiveScreen({go}) {
+  const [joined, setJoined] = useState(false);
+
+  React.useEffect(() => {
+    if (!joined) return;
+    const timer = setTimeout(() => go("home"), 2000);
+    return () => clearTimeout(timer);
+  }, [joined]);
+
   return (
     <main>
 
@@ -963,7 +1040,7 @@ function CollectiveScreen({go}) {
         </div>
 
         <div className="progress">
-          <i style={{width:"73%"}}/>
+          <i style={{ width: "73%" }} />
         </div>
 
         <div className="progress-foot">
@@ -975,7 +1052,7 @@ function CollectiveScreen({go}) {
 
       <section className="card explanation">
 
-        <h3>🎯 Kenapa digabung?</h3>
+        <h3><Target size={17} /> Kenapa digabung?</h3>
 
         <p>
           Material dalam jumlah besar lebih mudah disalurkan ke recycler dan dapat memenuhi kebutuhan volume mereka.
@@ -985,7 +1062,7 @@ function CollectiveScreen({go}) {
 
       <section className="partner">
 
-        <span>🏭 Dibutuhkan oleh</span>
+        <span><Factory size={15} /> Dibutuhkan oleh</span>
 
         <strong>EcoCycle Recycler</strong>
 
@@ -995,26 +1072,33 @@ function CollectiveScreen({go}) {
 
       </section>
 
-      <button
-        className="primary-btn full"
-        onClick={() => go("home")}
-      >
-        + Masukkan Sampahku
-      </button>
+      {joined && (
+  <div className="info-box">
+    ✅ Berhasil! Sampahmu masuk daftar Collective #024. Status: Menunggu penggabungan.
+  </div>
+)}
+
+    <button
+      className="primary-btn full"
+      onClick={() => setJoined(true)}
+      disabled={joined} >  
+      {joined ? "Berhasil bergabung ✓" : "+ Masukkan Sampahku"}
+    </button>
 
     </main>
   );
 }
 
 
-function SellScreen({ go, aiResult }) {
-  const [weight, setWeight] = useState("1");
+function SellScreen({ go, aiResult, token, initialWeight }) {
+  const [weight, setWeight] = useState(initialWeight || "1");
   const [calculation, setCalculation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [transaction, setTransaction] = useState(null);
   const [pickupAddress, setPickupAddress] = useState("");
   const [pickup, setPickup] = useState(null);
+  const [completed, setCompleted] = useState(false);
 
   const materialName = aiResult?.prediction || "Plastic";
   const displayName = materialNames[materialName] || materialName;
@@ -1073,7 +1157,9 @@ function SellScreen({ go, aiResult }) {
 
       const response = await fetch(
         `${BACKEND_URL}/transactions?${params}`,
-        { method: "POST" }
+        { method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
       const data = await response.json();
 
@@ -1090,7 +1176,7 @@ function SellScreen({ go, aiResult }) {
     }
   };
 
-  
+
   const createPickup = async () => {
     if (!transaction?.id) {
       setMessage("Transaksi belum tersedia.");
@@ -1133,6 +1219,36 @@ function SellScreen({ go, aiResult }) {
     }
   };
 
+  const simulateComplete = async () => {
+  if (!transaction?.id) return;
+
+  setLoading(true);
+  setMessage("");
+
+  try {
+    const response = await fetch(
+      `${BACKEND_URL}/transactions/${transaction.id}/simulate-complete`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    const data = await response.json();
+
+    if (!response.ok || data.success === false) {
+      throw new Error(data.detail || data.message || "Gagal menyelesaikan simulasi.");
+    }
+
+    setCompleted(true);
+    setMessage(
+      `Saldo bertambah Rp${Number(data.amount_credited).toLocaleString("id-ID")}!`
+    );
+  } catch (error) {
+    setMessage(error.message || "Gagal terhubung ke backend.");
+  } finally {
+    setLoading(false);
+  }
+  };
 
   return (
     <main>
@@ -1157,13 +1273,7 @@ function SellScreen({ go, aiResult }) {
             setTransaction(null);
             setMessage("");
           }}
-          style={{
-            width: "100%",
-            padding: 12,
-            marginTop: 8,
-            marginBottom: 16,
-            boxSizing: "border-box",
-          }}
+          className="field-input"
         />
 
         <button
@@ -1196,7 +1306,7 @@ function SellScreen({ go, aiResult }) {
           </div>
         )}
 
-        
+
         {transaction && (
           <section style={{ marginTop: 16 }}>
             <h3>Transaksi berhasil!</h3>
@@ -1225,14 +1335,7 @@ function SellScreen({ go, aiResult }) {
                   }
                   placeholder="Contoh: Alamat Demo ReValue"
                   rows={3}
-                  style={{
-                    width: "100%",
-                    padding: 12,
-                    marginTop: 8,
-                    marginBottom: 12,
-                    boxSizing: "border-box",
-                    resize: "vertical",
-                  }}
+                  className="field-input"
                 />
 
                 <button
@@ -1257,6 +1360,28 @@ function SellScreen({ go, aiResult }) {
                 <p>
                   Status pickup: <strong>{pickup.status}</strong>
                 </p>
+
+                {!completed && (
+                  <button
+                    className="primary-btn full"
+                    style={{ marginTop: 12 }}
+                    onClick={simulateComplete}
+                    disabled={loading}
+                  >
+                    {loading ? "Memproses..." : "Simulasikan Selesai (Demo)"}
+                  </button>
+                )}
+
+                {completed && (
+                  <button
+                    className="secondary-btn"
+                    style={{ marginTop: 12 }}
+                    onClick={() => go("wallet")}
+                  >
+                    Buka Wallet
+                  </button>
+                )}
+
               </section>
             )}
 
@@ -1276,7 +1401,7 @@ function SellScreen({ go, aiResult }) {
 }
 
 
-function WalletScreen({ go }) {
+function WalletScreen({ go, token }) {
   const [wallet, setWallet] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1287,9 +1412,10 @@ function WalletScreen({ go }) {
     setError("");
 
     try {
-      const [walletResponse, historyResponse] = await Promise.all([
-        fetch(`${BACKEND_URL}/wallet`),
-        fetch(`${BACKEND_URL}/wallet/history`),
+    const headers = { Authorization: `Bearer ${token}` };
+    const [walletResponse, historyResponse] = await Promise.all([
+      fetch(`${BACKEND_URL}/wallet`, { headers }),
+      fetch(`${BACKEND_URL}/wallet/history`, { headers }),
       ]);
 
       const walletData = await walletResponse.json();
@@ -1319,13 +1445,13 @@ function WalletScreen({ go }) {
     <main>
       <Header title="Wallet ReValue" back="home" go={go} />
 
-      <section className="card" style={{ padding: 20 }}>
+      <section className="card wallet-card">
         <p className="muted">Saldo wallet</p>
 
         {loading ? (
-          <p>Memuat saldo...</p>
+          <p className="loading-text">Memuat saldo...</p>
         ) : (
-          <h2 style={{ fontSize: 30 }}>
+          <h2 className="balance">
             {rupiah(wallet?.balance)}
           </h2>
         )}
@@ -1335,6 +1461,7 @@ function WalletScreen({ go }) {
           onClick={loadWallet}
           disabled={loading}
         >
+          <RefreshCw size={16} />
           Muat Ulang Saldo
         </button>
 
@@ -1343,26 +1470,25 @@ function WalletScreen({ go }) {
             {error}
           </div>
         )}
+      </section>
 
-        <h3 style={{ marginTop: 24 }}>Riwayat Transaksi</h3>
+      <section className="card list-card">
+        <h3>Riwayat Transaksi</h3>
 
         {!loading && history.length === 0 && (
           <p className="muted">Belum ada riwayat wallet.</p>
         )}
 
         {history.map((item) => (
-          <div
-            key={item.id}
-            style={{
-              padding: "14px 0",
-              borderBottom: "1px solid #e5ebe7",
-            }}
-          >
-            <strong>{item.description || "Transaksi ReValue"}</strong>
-            <p style={{ margin: "6px 0" }}>
-              ID transaksi: {item.transaction_id}
-            </p>
-            <strong>
+          <div key={item.id} className="history-item">
+            <div className="history-icon">
+              <CircleDollarSign size={22} />
+            </div>
+            <div className="history-main">
+              <strong>{item.description || "Transaksi ReValue"}</strong>
+              <small>ID transaksi: {item.transaction_id}</small>
+            </div>
+            <strong className="history-amount">
               {item.transaction_type === "credit" || item.type === "credit"
                 ? "+"
                 : ""}
@@ -1375,7 +1501,246 @@ function WalletScreen({ go }) {
   );
 }
 
+function MaterialsScreen({ go, focus }) {
+  const [materials, setMaterials] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
+  React.useEffect(() => {
+    fetch(`${BACKEND_URL}/materials`)
+      .then((res) => res.json())
+      .then((data) => setMaterials(data.materials || []))
+      .catch(() => setError("Gagal memuat daftar material."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const sorted = [...materials].sort(
+    (a, b) => (b.name === focus) - (a.name === focus)
+  );
+
+  return (
+    <main>
+      <Header title="Harga Material" back="home" go={go} />
+
+      {loading && <p className="muted">Memuat...</p>}
+      {error && <div className="info-box">{error}</div>}
+
+      {sorted.map((m) => (
+        <div
+          key={m.id}
+          className={`card material-item ${m.name === focus ? "focused" : ""}`}
+        >
+          <div className="material-item-head">
+            <span className="material-item-emoji">
+              {materialEmoji[m.name] || "♻️"}
+            </span>
+            <div>
+              <strong>{materialNames[m.name] || m.name}</strong>
+              <p>
+                {m.is_exchangeable
+                  ? `Rp${Number(m.price_per_kg).toLocaleString("id-ID")}/kg · min. ${m.min_weight_kg} kg`
+                  : "Belum bisa ditukar menjadi uang"}
+              </p>
+            </div>
+          </div>
+          <small className="muted">{materialTips[m.name]}</small>
+        </div>
+      ))}
+
+      <button className="primary-btn full" onClick={() => go("scan")}>
+        Scan Sampah
+        <ArrowRight size={19} />
+      </button>
+    </main>
+  );
+}
+
+function RecycleScreen({ go, aiResult }) {
+  const [chosen, setChosen] = useState("");
+
+  const prediction = aiResult?.prediction || "Plastic";
+  const displayName = materialNames[prediction] || prediction;
+  const emoji = materialEmoji[prediction] || "♻️";
+
+  // Data mitra masih contoh (prototype)
+  const partners = [
+    { name: "EcoCycle Recycler", info: "Terima Plastic dan Metal · ± 3 km" },
+    { name: "Bank Sampah Hijau", info: "Terima semua material daur ulang · ± 1,5 km" },
+  ];
+
+  React.useEffect(() => {
+    if (!chosen) return;
+    const timer = setTimeout(() => go("home"), 2500);
+    return () => clearTimeout(timer);
+  }, [chosen]);
+
+  return (
+    <main>
+      <Header title="Daur Ulang" back="result" go={go} />
+
+      <section className="card" style={{ padding: 20 }}>
+        <h2>{emoji} {displayName}</h2>
+        <p className="muted">
+          Pilih mitra recycler yang akan menerima sampahmu langsung.
+        </p>
+
+        {partners.map((p) => (
+          <div key={p.name} className="partner-item">
+            <div className="partner-item-head">
+              <div className="history-icon">
+                <Factory size={21} />
+              </div>
+              <div>
+                <strong>{p.name}</strong>
+                <p>{p.info}</p>
+              </div>
+            </div>
+            <button
+              className="secondary-btn"
+              onClick={() => setChosen(p.name)}
+              disabled={Boolean(chosen)}
+            >
+              Pilih Mitra
+            </button>
+          </div>
+        ))}
+      </section>
+
+      {chosen && (
+        <div className="info-box">
+          ✅ Berhasil! Sampahmu dikirim ke {chosen}. Status: Menunggu konfirmasi mitra.
+        </div>
+      )}
+    </main>
+  );
+}
+
+function ImpactScreen({ go, token }) {
+  const periods = [
+    { key: "today", label: "Hari Ini" },
+    { key: "week", label: "7 Hari" },
+    { key: "month", label: "30 Hari" },
+    { key: "all", label: "Semua" },
+  ];
+
+  const [period, setPeriod] = useState("today");
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  React.useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch(
+          `${BACKEND_URL}/impact?period=${period}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.detail || "Gagal memuat data.");
+        }
+        setData(result);
+      } catch (err) {
+        setError(err.message || "Gagal terhubung ke backend.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [period, token]);
+
+  const rupiah = (v) => `Rp${Number(v || 0).toLocaleString("id-ID")}`;
+
+  const statusLabel = {
+    pending: "Menunggu",
+    pickup_requested: "Pickup diminta",
+    verified: "Terverifikasi",
+  };
+
+  const formatDate = (iso) =>
+    iso
+      ? new Date(iso).toLocaleString("id-ID", {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "-";
+
+  return (
+    <main>
+      <Header title="Dampak & Riwayat" back="home" go={go} />
+
+      <div className="tab-row">
+        {periods.map((p) => (
+          <button
+            key={p.key}
+            onClick={() => setPeriod(p.key)}
+            className={`tab ${period === p.key ? "active" : ""}`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="info-box">{error}</div>}
+
+      <section className="card impact-card">
+        <div className="stats">
+          <Stat
+            icon={<CircleDollarSign/>}
+            value={rupiah(data?.total_income)}
+            label="Total Pendapatan"
+          />
+          <Stat
+            icon={<Recycle/>}
+            value={`${Number(data?.total_kg || 0).toLocaleString("id-ID")} kg`}
+            label="Material Tersalurkan"
+          />
+          <Stat
+            icon={<Package/>}
+            value={String(data?.count || 0)}
+            label="Transaksi"
+          />
+        </div>
+      </section>
+
+      <section className="card list-card">
+        <h3>Riwayat Transaksi</h3>
+
+        {loading && <p className="muted">Memuat...</p>}
+
+        {!loading && data?.items?.length === 0 && (
+          <p className="muted">Belum ada transaksi di periode ini.</p>
+        )}
+
+        {data?.items?.map((item) => (
+          <div key={item.id} className="history-item">
+            <div className="history-icon">
+              {materialEmoji[item.material_name] || "♻️"}
+            </div>
+            <div className="history-main">
+              <strong>
+                {materialNames[item.material_name] || item.material_name}
+              </strong>
+              <small>
+                {item.weight_kg} kg · {formatDate(item.created_at)}
+              </small>
+            </div>
+            <div className="history-side">
+              <strong className="history-amount">{rupiah(item.net_value)}</strong>
+              <span className={`status-pill ${item.status}`}>
+                {statusLabel[item.status] || item.status}
+              </span>
+            </div>
+          </div>
+        ))}
+      </section>
+    </main>
+  );
+}
 
 function ActivityScreen({ go }) {
   return (
@@ -1387,7 +1752,7 @@ function ActivityScreen({ go }) {
       </div>
 
       <div className="activity-card">
-        <div className="activity-icon">♻️</div>
+        <div className="activity-icon"><Recycle size={24} /></div>
         <div className="activity-content">
           <h3>Penukaran Sampah</h3>
           <p>
@@ -1404,7 +1769,7 @@ function ActivityScreen({ go }) {
       </div>
 
       <div className="activity-card">
-        <div className="activity-icon">💰</div>
+        <div className="activity-icon"><Wallet size={24} /></div>
         <div className="activity-content">
           <h3>Riwayat Saldo</h3>
           <p>
@@ -1434,7 +1799,7 @@ function ProfileScreen({ go }) {
       </div>
 
       <div className="activity-card">
-        <div className="activity-icon">👤</div>
+        <div className="activity-icon"><UserRound size={24} /></div>
         <div className="activity-content">
           <h3>Pengguna ReValue</h3>
           <p>
@@ -1445,7 +1810,7 @@ function ProfileScreen({ go }) {
       </div>
 
       <div className="activity-card">
-        <div className="activity-icon">💰</div>
+        <div className="activity-icon"><Wallet size={24} /></div>
         <div className="activity-content">
           <h3>Dompet Saya</h3>
           <p>Lihat saldo dan riwayat hasil penukaran.</p>
@@ -1459,7 +1824,7 @@ function ProfileScreen({ go }) {
       </div>
 
       <div className="activity-card">
-        <div className="activity-icon">♻️</div>
+        <div className="activity-icon"><Camera size={24} /></div>
         <div className="activity-content">
           <h3>Mulai Daur Ulang</h3>
           <p>Pindai sampah untuk mengetahui kategorinya.</p>
@@ -1474,8 +1839,6 @@ function ProfileScreen({ go }) {
     </div>
   );
 }
-
-
 
 function LoginScreen({ onLogin, loading, error, goRegister }) {
   const [email, setEmail] = useState("");
@@ -1528,7 +1891,7 @@ function LoginScreen({ onLogin, loading, error, goRegister }) {
           </div>
 
           {error && (
-            <p className="login-error">{error}</p>
+            <p className={`login-error ${String(error).startsWith("Akun berhasil") ? "is-success" : ""}`}>{error}</p>
           )}
 
           <button

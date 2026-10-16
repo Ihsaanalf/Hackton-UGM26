@@ -11,6 +11,7 @@ from fastapi import Security
 from database import engine, Base, SessionLocal
 import models
 import jwt
+from datetime import datetime, timedelta
 
 
 app = FastAPI(
@@ -278,7 +279,8 @@ def calculate_value(
 def create_transaction(
     material_name: str,
     estimated_weight_kg: float,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     # Cari material
     material = (
@@ -315,6 +317,7 @@ def create_transaction(
 
     # Buat transaksi
     transaction = models.Transaction(
+        user_id=current_user.id,
         material_name=material.name,
         estimated_weight_kg=estimated_weight_kg,
         price_per_kg=material.price_per_kg,
@@ -602,15 +605,29 @@ def verify_transaction_weight(
         "pickup_status": pickup.status
     }
 
-@app.get("/wallet")
-def get_wallet(db: Session = Depends(get_db)):
-    wallet = db.query(models.Wallet).first()
+def get_or_create_wallet(db: Session, user_id: int):
+    wallet = (
+        db.query(models.Wallet)
+        .filter(models.Wallet.user_id == user_id)
+        .first()
+    )
 
     if not wallet:
-        wallet = models.Wallet(balance=0.0)
+        wallet = models.Wallet(user_id=user_id, balance=0.0)
         db.add(wallet)
-        db.commit()
-        db.refresh(wallet)
+        db.flush()
+
+    return wallet
+
+
+@app.get("/wallet")
+def get_wallet(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    wallet = get_or_create_wallet(db, current_user.id)
+    db.commit()
+    db.refresh(wallet)
 
     return {
         "success": True,
@@ -622,11 +639,12 @@ def get_wallet(db: Session = Depends(get_db)):
 @app.post("/wallet/credit/{transaction_id}")
 def credit_wallet(
     transaction_id: int,
+    current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Cari transaksi ReValue
     transaction = db.query(models.Transaction).filter(
-        models.Transaction.id == transaction_id
+        models.Transaction.id == transaction_id,
+        models.Transaction.user_id == current_user.id
     ).first()
 
     if not transaction:
@@ -635,14 +653,12 @@ def credit_wallet(
             "message": "Transaksi tidak ditemukan"
         }
 
-    # Hanya transaksi terverifikasi yang boleh dikreditkan
     if transaction.status != "verified":
         return {
             "success": False,
             "message": "Transaksi belum diverifikasi"
         }
 
-    # Pastikan transaksi belum pernah dikreditkan
     existing_credit = db.query(
         models.WalletTransaction
     ).filter(
@@ -661,15 +677,8 @@ def credit_wallet(
             "message": "Nilai bersih transaksi harus lebih dari 0"
         }
 
-    # Ambil atau buat wallet demo
-    wallet = db.query(models.Wallet).first()
+    wallet = get_or_create_wallet(db, current_user.id)
 
-    if not wallet:
-        wallet = models.Wallet(balance=0.0)
-        db.add(wallet)
-        db.flush()
-
-    # Tambahkan saldo dan catat mutasi
     amount = transaction.net_value
     wallet.balance += amount
 
@@ -695,16 +704,12 @@ def credit_wallet(
 
 
 @app.get("/wallet/history")
-def get_wallet_history(db: Session = Depends(get_db)):
-    wallet = db.query(models.Wallet).first()
-
-    if not wallet:
-        return {
-            "success": True,
-            "balance": 0.0,
-            "count": 0,
-            "history": []
-        }
+def get_wallet_history(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    wallet = get_or_create_wallet(db, current_user.id)
+    db.commit()
 
     histories = (
         db.query(models.WalletTransaction)
@@ -878,4 +883,111 @@ def admin_test(
         "success": True,
         "message": "Akses admin berhasil",
         "user_id": current_user.id
+    }
+
+@app.get("/impact")
+def get_impact(
+    period: str = "today",
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    now = datetime.now()
+    start_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if period == "today":
+        start = start_today
+    elif period == "week":
+        start = start_today - timedelta(days=6)
+    elif period == "month":
+        start = start_today - timedelta(days=29)
+    else:
+        start = None
+
+    query = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id
+    )
+    if start:
+        query = query.filter(models.Transaction.created_at >= start)
+
+    items = query.order_by(models.Transaction.id.desc()).all()
+
+    return {
+        "success": True,
+        "period": period,
+        "count": len(items),
+        "total_income": sum(t.net_value for t in items),
+        "total_kg": sum((t.actual_weight_kg or t.estimated_weight_kg) for t in items),
+        "items": [
+            {
+                "id": t.id,
+                "material_name": t.material_name,
+                "weight_kg": t.actual_weight_kg or t.estimated_weight_kg,
+                "net_value": t.net_value,
+                "status": t.status,
+                "created_at": t.created_at.isoformat() if t.created_at else None
+            }
+            for t in items
+        ]
+    }
+
+@app.post("/transactions/{transaction_id}/simulate-complete")
+def simulate_complete(
+    transaction_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    transaction = db.query(models.Transaction).filter(
+        models.Transaction.id == transaction_id,
+        models.Transaction.user_id == current_user.id
+    ).first()
+
+    if not transaction:
+        return {"success": False, "message": "Transaksi tidak ditemukan"}
+
+    if transaction.status == "verified":
+        return {"success": False, "message": "Transaksi sudah selesai"}
+
+    if transaction.net_value <= 0:
+        return {"success": False, "message": "Nilai bersih transaksi harus lebih dari 0"}
+
+    existing_credit = db.query(models.WalletTransaction).filter(
+        models.WalletTransaction.transaction_id == transaction_id
+    ).first()
+
+    if existing_credit:
+        return {"success": False, "message": "Transaksi ini sudah dikreditkan"}
+
+    wallet = get_or_create_wallet(db, current_user.id)
+
+    # Simulasi: berat aktual dianggap sama dengan estimasi
+    transaction.actual_weight_kg = transaction.estimated_weight_kg
+    transaction.status = "verified"
+
+    pickup = db.query(models.PickupRequest).filter(
+        models.PickupRequest.transaction_id == transaction_id
+    ).first()
+
+    if pickup:
+        pickup.status = "weighed"
+
+    amount = transaction.net_value
+    wallet.balance += amount
+
+    db.add(models.WalletTransaction(
+        wallet_id=wallet.id,
+        transaction_id=transaction.id,
+        amount=amount,
+        transaction_type="credit",
+        description=f"Pencairan hasil penukaran {transaction.material_name}"
+    ))
+
+    db.commit()
+    db.refresh(wallet)
+
+    return {
+        "success": True,
+        "message": "Simulasi selesai, saldo ditambahkan",
+        "transaction_id": transaction.id,
+        "amount_credited": amount,
+        "wallet_balance": wallet.balance
     }
